@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: validator
+  labels:
+    appid: validator
+    component: application
+spec:
+  serviceName: validator-app
+  replicas: 1
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      appid: validator
+      component: application
+  template:
+    metadata:
+      labels:
+        appid: validator
+        component: application
+    spec:
+      serviceAccountName: gke-cluster
+      terminationGracePeriodSeconds: 300
+      volumes:
+      - name: validator-data
+        persistentVolumeClaim:
+          claimName: "validator-data"
+      containers:
+      - name: validator
+        image: sigp/lighthouse:v4.4.1
+        imagePullPolicy: IfNotPresent
+        resources:
+          # https://lighthouse-book.sigmaprime.io/installation.html#recommended-system-requirements
+          requests:
+            cpu: "2"
+            memory: "8Gi"
+        command: [
+          "lighthouse"
+        ]
+        args: [
+          "vc",
+          "--datadir", "/opt/validator-data/client",
+          "--network", "prater",
+          "--http",
+          "--http-port", "5062",
+          "--metrics",
+          "--metrics-port", "5064",
+          # https://kubernetes.io/docs/concepts/services-networking/dns-pod-service/
+          "--beacon-nodes", "http://10.48.1.5:5052", # Replace with beacon service IP 
+        ]
+        volumeMounts:
+        - mountPath: /opt/validator-data
+          name: validator-data
+        ports:
+        # https://lighthouse-book.sigmaprime.io/advanced_networking.html
+        - name: beacon-metrics
+          containerPort: 5064
+        - name: beacon-json-rpc
+          containerPort: 5062
+        securityContext:
+          allowPrivilegeEscalation: false
+      nodeSelector:
+        cloud.google.com/gke-nodepool: validator-pool
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: validator-data
+spec:
+  storageClassName: "premium-rwo"
+  resources:
+    requests:
+      storage: 50Gi
+  accessModes:
+  - ReadWriteOnce

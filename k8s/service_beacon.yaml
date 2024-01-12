@@ -1,0 +1,19 @@
+# Service makes beacon API available for validator
+# Use IP of service for the validator.
+apiVersion: v1
+kind: Service
+metadata:
+  name: internal-beacon
+  labels:
+    appid: consensus
+    component: application
+spec:
+  type: ClusterIP
+  selector:
+    appid: consensus
+    component: application
+  ports:
+  - name: internal-beacon-rpc
+    port: 5052
+    targetPort: 5052
+    protocol: TCP

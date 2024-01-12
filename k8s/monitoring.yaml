@@ -1,0 +1,12 @@
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: pod-monitoring
+spec:
+  endpoints:
+  - port: exec-metrics
+    interval: 30s
+    path: "/debug/metrics/prometheus"
+  - port: beacon-metrics
+    interval: 30s
+    path: "/metrics"

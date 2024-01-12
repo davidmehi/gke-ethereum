@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: consensus
+  labels:
+    appid: consensus
+    component: application
+spec:
+  serviceName: consensus-app
+  replicas: 1
+  updateStrategy:
+    rollingUpdate:
+      partition: 0
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      appid: consensus
+      component: application
+  template:
+    metadata:
+      labels:
+        appid: consensus
+        component: application
+    spec:
+      serviceAccountName: gke-cluster
+      terminationGracePeriodSeconds: 300
+      volumes:
+      - name: ethereum-data
+        persistentVolumeClaim:
+          claimName: "el-disk"
+      - name: beacon-data
+        persistentVolumeClaim:
+          claimName: "cl-disk"
+      containers:
+      - name: execution
+        image: ethereum/client-go:v1.13.0
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: "4"
+            memory: "7Gi"
+        volumeMounts:
+        - mountPath: /opt/ethereum-data
+          name: ethereum-data
+        ports:
+        - containerPort: 6060
+          name: exec-metrics
+          protocol: TCP
+        - containerPort: 8545
+          name: json-rpc
+          protocol: TCP
+        - containerPort: 30303
+          name: rlpx
+          protocol: TCP
+        - containerPort: 30303
+          name: discovery
+          protocol: UDP
+        command: [
+          "geth"
+        ]
+        args: [
+          "--goerli",
+          "--datadir", "/opt/ethereum-data",
+          "--gcmode", "full",
+          "--metrics",
+          "--metrics.addr", "0.0.0.0",
+          "--metrics.port", "6060", 
+          "--metrics.expensive",
+          "--snapshot=false",
+          "--syncmode=snap",
+          "--http",
+          "--http.addr", "0.0.0.0",
+          "--http.port", "8545",
+          "--authrpc.addr", "localhost",
+          "--authrpc.port", "8551",
+          "--authrpc.jwtsecret", "/opt/ethereum-data/jwt.hex",
+        ]
+      - name: beacon
+        image: sigp/lighthouse:v4.4.1
+        resources:
+          # https://lighthouse-book.sigmaprime.io/system-requirements.html
+          requests:
+            cpu: "2"
+            memory: "7Gi"
+        command: [
+          "lighthouse"
+        ]
+        args: [
+          "bn",
+          "--datadir", "/opt/beacon-data",
+          "--http",
+          "--http-address", "0.0.0.0",
+          "--http-allow-origin", "*",
+          "--metrics",
+          "--metrics-address", "0.0.0.0",
+          "--metrics-allow-origin", "*",
+          "--builder", "http://127.0.0.1:18550",
+          "--execution-endpoint", "http://127.0.0.1:8551",
+          "--execution-jwt", "/opt/ethereum-data/jwt.hex",
+          "--network", "prater",
+          "--checkpoint-sync-url", "https://prater.checkpoint.sigp.io",
+          # https://lighthouse-book.sigmaprime.io/validator-monitoring.html#how-to-enable-monitoring
+          "--validator-monitor-auto",
+          "--purge-db",
+        ]
+        volumeMounts:
+        - mountPath: /opt/beacon-data
+          name: beacon-data
+        - mountPath: /opt/ethereum-data
+          name: ethereum-data
+        ports:
+        # https://lighthouse-book.sigmaprime.io/advanced_networking.html
+        - name: beacon-metrics
+          containerPort: 5054
+        - name: beacon-json-rpc
+          containerPort: 5052
+        securityContext:
+          allowPrivilegeEscalation: false
+      nodeSelector:
+        cloud.google.com/gke-nodepool: consensus-pool
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: el-disk
+spec:
+  storageClassName: "premium-rwo"
+  resources:
+    requests:
+      storage: 1Ti
+  volumeName: el-disk
+  accessModes:
+  - ReadWriteOnce
+
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cl-disk
+spec:
+  storageClassName: "premium-rwo"
+  resources:
+    requests:
+      storage: 512Gi
+  volumeName: cl-disk
+  accessModes:
+  - ReadWriteOnce
